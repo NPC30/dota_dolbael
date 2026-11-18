@@ -111,8 +111,42 @@ return {
 - `LOADED player=P, chunks=N/N, req=R, loaded=x/y` — игрок полностью загрузился;
 - `FAIL player=P, req=R, try=K/M, reason=...` — ошибка загрузки игрока;
 - `PASSED x/y - game starting` / `FAILED x/y, reason=...` — итог гейта.
+- `TRACE t=... STAGE p=P ...` — подробный трейс запроса (новое, см. ниже).
 
 Старый красный `[LoadingGate] ERROR: ...` в чате тоже остался.
+
+### Детальный трейс в чат (2026-11-18, по просьбе "высрать трейс в чат")
+Чтобы увидеть, куда реально уходит запрос и где он умирает, дополнительно к серверным
+`SEND/CHUNK0/FAIL` добавлен сквозной трейс:
+
+- **Сервер** (`client-api-transport.lua`) печатает в чат с префиксом
+  `[Gate] TRACE <time> ...`:
+  - `SERVER_SEND p=... req=... src=local sig=... path=/api/panorama/game-start-v2.html?...`
+    — точный путь/параметры, которые получил клиент;
+  - `CLIENT_ACK p=... kind=start req=...` — клиент подтвердил получение запроса;
+  - `CLIENT_CHUNK p=... idx=N/total req=... bytes=...` — первый, каждый 6-й и
+    последний чанк (не спамим все 24);
+  - `CLIENT_FAIL p=... req=... try=K reason=...` — клиент сообщил об ошибке;
+  - `GATE_PASS` / `GATE_FAIL` — итог;
+  - `RELAY_QUEUE` / `RELAY_DISPATCH` / `RELAY_FAIL` и
+    `CLIENT_RELAY_RESP` / `CLIENT_RELAY_FAIL` — путь обычного relay-запроса.
+- **Клиент** (`panorama/scripts/custom_game/client_api_transport.vjs_c`, рыхлый
+  файл-оверрайд, VPK не тронут) отправляет на сервер событие
+  `omg_gate_trace{stage,info}` и печатает в тот же чат:
+  - В заголовке `vjs_c` обновлены оба поля длины (общий размер файла и размер JS).
+  - `START_EVENT` — событие старта получено клиентом (`url`, первые 12 символов подписи);
+  - `START_URL` — точный `DOTAHTMLPanel.SetURL(...)` (первый чанк, ретраи, каждый 6-й);
+  - `START_TITLE` / `START_TITLE_BAD` — что реально пришло в `HTMLTitle` (длина и первые 70 символов),
+    включая невалидные ответы;
+  - `START_CHUNK` / `START_LOADED` — чанк ушёл на сервер / все чанки собраны;
+  - `START_TIMEOUT` / `START_FAIL` — таймаут 10 с × 3 и финальный reason;
+  - `RELAY_TITLE` / `RELAY_RESP` / `RELAY_TIMEOUT` / `RELAY_UPLOAD_TIMEOUT` / `RELAY_FAIL`
+    — такой же трейс для обычного HTTP-релея.
+
+Если в чате есть `START_URL`, но нет `START_TITLE` — `DOTAHTMLPanel` не загрузил
+внешний URL (сеть/CEF/прокси клиента). Если `START_TITLE` есть, но он `BAD` —
+проблема в формате `<title>` или подписи. Если `START_CHUNK` есть, а `CHUNK0`
+на сервере нет — проблема в отправке custom game event клиентом.
 
 ---
 
@@ -126,13 +160,14 @@ return {
    Select-String -Path 'E:\SteamLibrary\steamapps\common\dota 2 beta\game\dota_addons\3564393242\scripts\vscripts\api\game.lua' -Pattern 'GetLoadingGateConfig'
    Test-Path 'E:\SteamLibrary\steamapps\common\dota 2 beta\game\dota_addons\3564393242\scripts\vscripts\omg_loading_gate_config.lua'
    ```
-3. Быстрый путь — скопировать три пропатченных файла:
+3. Быстрый путь — скопировать четыре пропатченных файла:
    ```powershell
    $b='E:\SteamLibrary\steamapps\common\dota 2 beta\game\dota_addons\_backup_3564393242\CURRENT_FIX'
    $w='E:\SteamLibrary\steamapps\common\dota 2 beta\game\dota_addons\3564393242'
    Copy-Item "$b\client-api-transport.PATCHED.lua" "$w\scripts\vscripts\api\client-api-transport.lua" -Force
    Copy-Item "$b\game.PATCHED.lua" "$w\scripts\vscripts\api\game.lua" -Force
    Copy-Item "$b\omg_loading_gate_config.lua" "$w\scripts\vscripts\omg_loading_gate_config.lua" -Force
+   Copy-Item "$b\client_api_transport.vjs_c.PATCHED" "$w\panorama\scripts\custom_game\client_api_transport.vjs_c" -Force
    ```
 4. Если VPK поменял сами файлы (новая версия аддона) — лучше наложить
    `patch.diff` вручную, чтобы не потерять чужие изменения.
@@ -148,6 +183,9 @@ return {
 - `game.PATCHED.lua` — текущая версия с гейтом.
 - `omg_loading_gate_config.lua` — копия Lua-конфига гейта.
 - `patch.diff` — united diff по обоим Lua-файлам.
+- `client_api_transport.vjs_c.ORIGINAL` — рыхлый клиентский JS до трейса.
+- `client_api_transport.vjs_c.PATCHED` — рыхлый клиентский JS с трейсом `omg_gate_trace`.
+- `client_api_transport.gate_trace.js` — тот же JS текстом (для node --check).
 - `NOTE.md` — этот файл.
 
 ---
@@ -310,7 +348,9 @@ signature=... backend=...`, в чат — `SEND ... key=local`.
   `END_CHUNK_SIZE=2400`, watchdog-таймеры `upload started`, диагностические
   print'ы, СТАРЫЙ watcher «позднего игрока», правки `api-client.lua`,
   `event-game-state-change.lua`, `game-end.lua`, `standalone-server.lua`,
-  Panorama JS. Всё это пробовалось и не помогло / мешало.
+- Старые Panorama-JS-эксперименты (диагностика game/end, END_CHUNK_SIZE=2400,
+  upload-start fallback) не возвращать. НОВЫЙ минимальный трейс
+  `omg_gate_trace` в рыхлом `client_api_transport.vjs_c` — часть текущего фикса.
   Новый human-only watcher с лимитом попыток — часть текущего фикса.
 - Не возвращать KV-конфиг — он не парсился.
 - Не добавлять кастомные cvars в серверный cfg — Dota их не создаёт.

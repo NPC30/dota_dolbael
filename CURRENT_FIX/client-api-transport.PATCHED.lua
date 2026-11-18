@@ -61,6 +61,10 @@ function ClientApiTransport.RegisterListeners(self)
         "client_api_transport_heartbeat",
         function(_userId, event) return self:OnTransportHeartbeat(event) end
     )
+    CustomGameEventManager:RegisterListener(
+        "omg_gate_trace",
+        function(_userId, event) return self:OnGateTrace(event) end
+    )
     Timers:CreateTimer({
         endTime = self.RELAY_MONITOR_SECONDS,
         useGameTime = false,
@@ -115,6 +119,7 @@ function ClientApiTransport.SendApiRequest(self, apiParameter)
     local bodyJson = apiParameter.body == nil and "null" or json.encode(apiParameter.body)
     local envelope = ((("{\"query\":" .. queryJson) .. ",\"body\":") .. bodyJson) .. "}"
     local encoded = ClientApiCodec:Encode(envelope)
+    self:Trace(string.format("RELAY_QUEUE id=%s method=%s path=%s bytes=%d", requestId, string.upper(apiParameter.method), apiParameter.path, #encoded), "#FFCC66")
     local chunks = ClientApiCodec:Chunk(encoded, self.RELAY_REQUEST_CHUNK_SIZE)
     local method = string.upper(apiParameter.method)
     local signature = LocalGameAuth:HmacSha256Hex(credential.secret, (((((("OMG2|relay|" .. requestId) .. "|") .. method) .. "|") .. apiParameter.path) .. "|") .. encoded)
@@ -155,6 +160,28 @@ function ClientApiTransport.Chat(self, message, color)
     end
     GameRules:SendCustomMessage("<font color='" .. (color or "#66CCFF") .. "'>[Gate] " .. message .. "</font>", 0, 0)
 end
+function ClientApiTransport.Trace(self, message, color)
+    self:Chat("TRACE " .. string.format("%.1f", Time()) .. " " .. message, color or "#AADDFF")
+end
+function ClientApiTransport.OnGateTrace(self, event)
+    if event.PlayerID == nil then
+        return
+    end
+    local playerId = tonumber(event.PlayerID) or -1
+    local stage = tostring(event.stage or "TRACE")
+    local info = tostring(event.info or "")
+    print("[GateTrace] p=" .. tostring(playerId) .. " " .. stage .. " " .. info)
+    local shortInfo = #info > 200 and (string.sub(info, 1, 197) .. "...") or info
+    local color = "#AADDFF"
+    if string.find(stage, "FAIL", nil, true) or string.find(stage, "TIMEOUT", nil, true) or string.find(stage, "BAD", nil, true) then
+        color = "#FF5555"
+    elseif string.find(stage, "CHUNK", nil, true) or string.find(stage, "LOADED", nil, true) or string.find(stage, "RESP", nil, true) then
+        color = "#66FF99"
+    elseif string.find(stage, "URL", nil, true) or string.find(stage, "RELAY", nil, true) then
+        color = "#FFCC66"
+    end
+    self:Trace(stage .. " p=" .. tostring(playerId) .. " " .. shortInfo, color)
+end
 function ClientApiTransport.SendGameStartRequest(self, playerId, steamId, matchId, randomDraftValue, credential, generation)
     local player = PlayerResource:GetPlayer(playerId)
     if not player then
@@ -194,6 +221,10 @@ function ClientApiTransport.SendGameStartRequest(self, playerId, steamId, matchI
         (((("SEND player=" .. tostring(playerId)) .. ((", req=" .. requestId) .. ((", try=" .. tostring(attempts + 1)) .. ("/" .. tostring(self.GATE_START_MAX_ATTEMPTS))))) .. ", key=") .. tostring(credential.source)),
         "#66CCFF"
     )
+    self:Trace(string.format(
+        "SERVER_SEND p=%s req=%s src=%s sig=%s path=/api/panorama/game-start-v2.html?requestId=%s&steamId=%s&matchId=%s&randomDraftMode=%s&chunk=0",
+        tostring(playerId), requestId, tostring(credential.source), playerSignature, requestId, tostring(steamId), matchId, tostring(randomDraftValue)
+    ), "#66CCFF")
     CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", payload)
     Timers:CreateTimer({
         endTime = 1,
@@ -409,6 +440,7 @@ function ClientApiTransport.DispatchRelayRequest(self, pending)
     pending.status = nil
     pending.total = nil
     pending.chunks = {}
+    self:Trace(string.format("RELAY_DISPATCH id=%s dispatch=%s to=p%s path=%s", pending.requestId, dispatchId, tostring(relay.playerId), pending.path), "#FFCC66")
     local function sendChunks()
         local active = self.relayResponses[pending.requestId]
         if not active or active.complete or active.dispatchId ~= dispatchId then
@@ -607,6 +639,7 @@ function ClientApiTransport.CompleteRelayFailure(self, pending, reason)
     pending.complete = true
     self:RemoveQueuedRelayRequest(pending)
     print((((((("[ClientApiTransport] relay failed: requestId=" .. pending.requestId) .. ", method=") .. pending.method) .. ", path=") .. pending.path) .. ", reason=") .. reason)
+    self:Trace(string.format("RELAY_FAIL id=%s path=%s reason=%s", pending.requestId, pending.path, tostring(reason)), "#FF5555")
     local ____this_16
     ____this_16 = pending
     local ____opt_15 = ____this_16.failure
@@ -788,6 +821,9 @@ function ClientApiTransport.OnStartChunk(self, event)
     end
     pending.total = total
     pending.chunks[tostring(index)] = event.data
+    if index == 0 or index + 1 == total or (index + 1) % 6 == 0 then
+        self:Trace(string.format("CLIENT_CHUNK p=%s idx=%d/%d req=%s bytes=%d", tostring(playerId), index, total, pending.requestId, #tostring(event.data)), "#66FF99")
+    end
     if index == 0 then
         self:Chat(
             (((("CHUNK0 player=" .. tostring(playerId)) .. ", total=") .. tostring(total)) .. ", req=") .. pending.requestId,
@@ -855,6 +891,7 @@ function ClientApiTransport.OnStartFailure(self, event)
         self.startFinished = self.startFinished + 1
     end
     print((("[ClientApiTransport] game/start relay failed: player=" .. tostring(playerId)) .. ", reason=") .. event.reason)
+    self:Trace(string.format("CLIENT_FAIL p=%s req=%s try=%d reason=%s", tostring(playerId), pending.requestId, pending.attempts or 1, tostring(event.reason)), "#FF5555")
     self:Chat(
         ("FAIL player=" .. tostring(playerId)) .. ((", req=" .. pending.requestId) .. ((", try=" .. tostring(pending.attempts or 1)) .. ("/" .. tostring(self.GATE_START_MAX_ATTEMPTS) .. (", reason=" .. tostring(event.reason))))),
         "#FF5555"
@@ -874,6 +911,7 @@ function ClientApiTransport.TryFinishStart(self, generation, force)
         local loaded = #self.startResults
         if loaded >= required then
             print(("[ClientApiTransport] game/start gate passed: loaded=" .. tostring(loaded)) .. ("/" .. tostring(required)))
+            self:Trace(string.format("GATE_PASS loaded=%d/%d", loaded, required), "#66FF99")
             self:Chat("PASSED " .. tostring(loaded) .. "/" .. tostring(required) .. " - game starting", "#66FF99")
             if success ~= nil then
                 success(nil, self:MergeStartResults(self.startResults))
@@ -882,6 +920,7 @@ function ClientApiTransport.TryFinishStart(self, generation, force)
         end
         local reason = force and "timeout" or "not_enough_players_loaded"
         print((((("[ClientApiTransport] game/start gate FAILED: loaded=" .. tostring(loaded)) .. "/") .. tostring(required)) .. ", reason=") .. reason)
+        self:Trace(string.format("GATE_FAIL loaded=%d/%d reason=%s", loaded, required, reason), "#FF5555")
         self:Chat("FAILED " .. tostring(loaded) .. "/" .. tostring(required) .. ", reason=" .. reason, "#FF5555")
         if failure ~= nil then
             failure(nil, (reason .. ":") .. (tostring(loaded) .. ("/" .. tostring(required))))
@@ -978,6 +1017,7 @@ function ClientApiTransport.OnRelayResponseChunk(self, event)
     end
     local responseBody = ClientApiCodec:Decode(encoded)
     print((((((("[ClientApiTransport] relay response: requestId=" .. event.requestId) .. ", method=") .. pending.method) .. ", path=") .. pending.path) .. ", status=") .. tostring(status))
+    self:Trace(string.format("CLIENT_RELAY_RESP id=%s status=%d path=%s", event.requestId, status, pending.path), "#66FF99")
     self:MarkRelaySuccess(pending.playerId)
     if status >= 200 and status < 300 then
         pending:success(responseBody)
@@ -996,6 +1036,7 @@ function ClientApiTransport.OnRelayFailure(self, event)
         return
     end
     print((((((("[ClientApiTransport] relay failure: requestId=" .. event.requestId) .. ", method=") .. pending.method) .. ", path=") .. pending.path) .. ", reason=") .. event.reason)
+    self:Trace(string.format("CLIENT_RELAY_FAIL id=%s reason=%s", event.requestId, tostring(event.reason)), "#FF5555")
     if pending.playerId ~= nil then
         self:HandleRelayPlayerFailure(pending.playerId, event.reason)
     end
@@ -1026,6 +1067,7 @@ function ClientApiTransport.OnTransportAck(self, event)
     end
     if accepted then
         print((((("[ClientApiTransport] client received: kind=" .. event.kind) .. ", requestId=") .. event.requestId) .. ", playerId=") .. tostring(event.PlayerID))
+        self:Trace(string.format("CLIENT_ACK p=%s kind=%s req=%s", tostring(event.PlayerID), tostring(event.kind), tostring(event.requestId)), "#66CCFF")
     end
 end
 function ClientApiTransport.OnTransportReady(self, event)
