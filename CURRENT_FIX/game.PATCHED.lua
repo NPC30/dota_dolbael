@@ -207,14 +207,13 @@ function Game.PostSaveTempPoints(self, steamId, matchId, battlePoints)
     ApiClient:DebugLog((((("[Game] old save temp points disabled: steamId=" .. tostring(steamId)) .. ", matchId=") .. matchId) .. ", battlePoints=") .. tostring(battlePoints))
 end
 function Game.GetLoadingGateConfig(self)
-    local kv = LoadKeyValues("scripts/kv/omg_loading_gate.kv")
-    local section = kv and kv.OMGLoadingGate or nil
-    if not section then
+    local ok, config = pcall(require, "omg_loading_gate_config")
+    if not ok or type(config) ~= "table" then
         print("[Game] loading gate config invalid, using defaults: expected=2, timeout=120")
         return 2, 120
     end
-    local expected = tonumber(section.expected_players)
-    local timeout = tonumber(section.timeout_seconds)
+    local expected = tonumber(config.expected_players)
+    local timeout = tonumber(config.timeout_seconds)
     if expected == nil then
         expected = 2
     end

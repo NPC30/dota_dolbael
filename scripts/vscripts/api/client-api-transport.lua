@@ -149,6 +149,53 @@ function ClientApiTransport.SendApiRequest(self, apiParameter)
         self:EnqueueRelayRequest(pending)
     end
 end
+function ClientApiTransport.SendGameStartRequest(self, playerId, steamId, matchId, randomDraftValue, credential, generation)
+    local player = PlayerResource:GetPlayer(playerId)
+    if not player then
+        return false
+    end
+    local key = tostring(playerId)
+    local previous = self.startPending[key]
+    local attempts = previous and previous.attempts or 0
+    -- game-start-v2.html is keyed by requestId on the backend. A shared
+    -- id makes every player after the first receive an empty/stale page
+    -- and time out on chunk 0, so give each player its own id.
+    local requestId = (((matchId .. "_") .. tostring(generation)) .. "_") .. tostring(RandomInt(100000, 999999))
+    self.startPending[key] = {
+        requestId = requestId,
+        chunks = {},
+        complete = false,
+        success = false,
+        attempts = attempts + 1
+    }
+    local playerSignature = LocalGameAuth:HmacSha256Hex(
+        credential.secret,
+        (((((("OMG2|start|" .. requestId) .. "|") .. tostring(steamId)) .. "|") .. matchId) .. "|") .. tostring(randomDraftValue)
+    )
+    local payload = {
+        requestId = requestId,
+        steamId = steamId,
+        matchId = matchId,
+        randomDraftMode = randomDraftValue,
+        signature = playerSignature,
+        backendUrl = self.BACKEND_URL
+    }
+    print(("[ClientApiTransport] game/start request sent: playerId=" .. tostring(playerId)) .. ", requestId=" .. requestId)
+    CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", payload)
+    Timers:CreateTimer({
+        endTime = 1,
+        useGameTime = false,
+        callback = function()
+            local pending = self.startPending[key]
+            if not pending or pending.requestId ~= requestId or pending.complete or pending.acknowledged then
+                return nil
+            end
+            CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", payload)
+            return 1
+        end
+    })
+    return true
+end
 function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMode, success, failure, expectedPlayers, timeoutSeconds)
     print((("[ClientApiTransport] game/start relay: players=" .. tostring(#players)) .. ", matchId=") .. matchId)
     self.gateExpectedPlayers = expectedPlayers or 0
@@ -166,7 +213,7 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
     self.startPending = {}
     self.startResults = {}
     self.startExpected = #players
-    if self.gateExpectedPlayers > 0 and #players < self.gateExpectedPlayers then
+    if self.gateExpectedPlayers > 0 then
         self.startExpected = self.gateExpectedPlayers
     end
     self.startFinished = 0
@@ -174,49 +221,10 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
     self.startFailure = failure
     for ____, entry in ipairs(players) do
         do
-            local player = PlayerResource:GetPlayer(entry.playerId)
-            if not player then
+            if not self:SendGameStartRequest(entry.playerId, entry.steamId, matchId, randomDraftValue, credential, generation) and self.gateExpectedPlayers <= 0 then
                 self.startFinished = self.startFinished + 1
-                goto __continue27
             end
-            -- game-start-v2.html is keyed by requestId on the backend. A shared
-            -- id makes every player after the first receive an empty/stale page
-            -- and time out on chunk 0, so give each player its own id.
-            local requestId = (((matchId .. "_") .. tostring(generation)) .. "_") .. tostring(RandomInt(100000, 999999))
-            self.startPending[tostring(entry.playerId)] = {requestId = requestId, chunks = {}, complete = false}
-            local playerSignature = LocalGameAuth:HmacSha256Hex(
-                credential.secret,
-                (((((("OMG2|start|" .. requestId) .. "|") .. tostring(entry.steamId)) .. "|") .. matchId) .. "|") .. tostring(randomDraftValue)
-            )
-            CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", {
-                requestId = requestId,
-                steamId = entry.steamId,
-                matchId = matchId,
-                randomDraftMode = randomDraftValue,
-                signature = playerSignature,
-                backendUrl = self.BACKEND_URL
-            })
-            Timers:CreateTimer({
-                endTime = 1,
-                useGameTime = false,
-                callback = function()
-                    local pending = self.startPending[tostring(entry.playerId)]
-                    if not pending or pending.complete or pending.acknowledged then
-                        return nil
-                    end
-                    CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", {
-                        requestId = requestId,
-                        steamId = entry.steamId,
-                        matchId = matchId,
-                        randomDraftMode = randomDraftValue,
-                        signature = playerSignature,
-                        backendUrl = self.BACKEND_URL
-                    })
-                    return 1
-                end
-            })
         end
-        ::__continue27::
     end
     if #players == 0 and self.gateExpectedPlayers <= 0 then
         failure(nil, "no_players")
@@ -230,6 +238,39 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
         useGameTime = false,
         callback = function() return self:TryFinishStart(generation, true) end
     })
+    if self.gateExpectedPlayers > 0 then
+        Timers:CreateTimer({
+            endTime = 2,
+            useGameTime = false,
+            callback = function()
+                if generation ~= self.startGeneration or not self.startSuccess then
+                    return nil
+                end
+                if #self.startResults >= self.gateExpectedPlayers then
+                    return nil
+                end
+                PlayerHelper:ForEachPlayer(function(____, playerId)
+                    if generation ~= self.startGeneration or not self.startSuccess then
+                        return
+                    end
+                    if not PlayerHelper:IsHumanPlayerByPlayerId(playerId) then
+                        return
+                    end
+                    local key = tostring(playerId)
+                    local pending = self.startPending[key]
+                    local attempts = pending and pending.attempts or 0
+                    local needSend = not pending or pending.complete and not pending.success and attempts < self.GATE_START_MAX_ATTEMPTS
+                    if needSend then
+                        local steamId = PlayerResource:GetSteamAccountID(playerId)
+                        if self:SendGameStartRequest(playerId, steamId, matchId, randomDraftValue, credential, generation) then
+                            print((("[ClientApiTransport] game/start gate player added/retried: playerId=" .. tostring(playerId)) .. ", attempts=") .. tostring(attempts + 1))
+                        end
+                    end
+                end)
+                return 2
+            end
+        })
+    end
 end
 function ClientApiTransport.SendGameEnd(self, gameEndDto, success, failure)
     print("[ClientApiTransport] game/end relay: matchId=" .. gameEndDto.matchId)
@@ -725,6 +766,7 @@ function ClientApiTransport.OnStartChunk(self, event)
         end
     end
     pending.complete = true
+    pending.success = true
     self.startFinished = self.startFinished + 1
     do
         local function ____catch(____error)
@@ -762,7 +804,10 @@ function ClientApiTransport.OnStartFailure(self, event)
         return
     end
     pending.complete = true
-    self.startFinished = self.startFinished + 1
+    pending.success = false
+    if self.gateExpectedPlayers <= 0 then
+        self.startFinished = self.startFinished + 1
+    end
     print((("[ClientApiTransport] game/start relay failed: player=" .. tostring(playerId)) .. ", reason=") .. event.reason)
     self:TryFinishStart(self.startGeneration, false)
 end
@@ -1014,6 +1059,7 @@ ClientApiTransport.startPending = {}
 ClientApiTransport.startResults = {}
 ClientApiTransport.gateExpectedPlayers = 0
 ClientApiTransport.gateTimeoutSeconds = 0
+ClientApiTransport.GATE_START_MAX_ATTEMPTS = 3
 ClientApiTransport.startExpected = 0
 ClientApiTransport.startFinished = 0
 ClientApiTransport.endUploads = {}
