@@ -1,0 +1,222 @@
+﻿diff --git game.ORIGINAL.lua game.PATCHED.lua
+index eba8332..7e9da2b 100644
+--- game.ORIGINAL.lua
++++ game.PATCHED.lua
+@@ -147,6 +147,7 @@ function Game.DecodeGameStart(self, rawData)
+     return ____temp_8
+ end
+ function Game.FinalizeStartGame(self, gameStart)
++    self:ReleaseGameAfterLoading()
+     Player.memberList = gameStart.members or ({})
+     Player.playerList = gameStart.players or ({})
+     Player.pointInfoList = gameStart.pointInfo or ({})
+@@ -205,9 +206,64 @@ end
+ function Game.PostSaveTempPoints(self, steamId, matchId, battlePoints)
+     ApiClient:DebugLog((((("[Game] old save temp points disabled: steamId=" .. tostring(steamId)) .. ", matchId=") .. matchId) .. ", battlePoints=") .. tostring(battlePoints))
+ end
++function Game.GetLoadingGateConfig(self)
++    local kv = LoadKeyValues("scripts/kv/omg_loading_gate.kv")
++    local section = kv and kv.OMGLoadingGate or nil
++    if not section then
++        print("[Game] loading gate config invalid, using defaults: expected=2, timeout=120")
++        return 2, 120
++    end
++    local expected = tonumber(section.expected_players)
++    local timeout = tonumber(section.timeout_seconds)
++    if expected == nil then
++        expected = 2
++    end
++    if expected < 0 then
++        expected = 0
++    end
++    if timeout == nil or timeout < 30 then
++        timeout = 120
++    end
++    return expected, timeout
++end
++function Game.HoldGameForLoading(self, seconds)
++    self.loadingGateHold = true
++    PauseGame(true)
++    GameRules:SetCustomGameSetupAutoLaunchDelay(seconds)
++    GameRules:SetCustomGameSetupRemainingTime(seconds)
++    Timers:CreateTimer({
++        endTime = 1,
++        useGameTime = false,
++        callback = function()
++            if not self.loadingGateHold then
++                return nil
++            end
++            if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
++                GameRules:SetCustomGameSetupRemainingTime(seconds)
++            end
++            return 1
++        end
++    })
++end
++function Game.ReleaseGameAfterLoading(self)
++    if not self.loadingGateHold then
++        return
++    end
++    self.loadingGateHold = nil
++    GameRules:SetCustomGameSetupAutoLaunchDelay(50)
++    GameRules:SetCustomGameSetupRemainingTime(3)
++    if GameRules:IsGamePaused() then
++        PauseGame(false)
++    end
++end
+ function Game.StartGame(self)
+     self:SetTransportMode(0, "probing_game_start")
+     CustomNetTables:SetTableValue("loading_status", "loading_status", {status = 1})
++    local expectedPlayers, timeoutSeconds = self:GetLoadingGateConfig()
++    if expectedPlayers > 0 then
++        print((("[Game] loading gate enabled: expected=" .. tostring(expectedPlayers)) .. ", timeout=") .. tostring(timeoutSeconds))
++        self:HoldGameForLoading(timeoutSeconds)
++    end
+     local steamIds = {}
+     local clientPlayers = {}
+     local playerCount = 0
+@@ -222,29 +278,42 @@ function Game.StartGame(self)
+     local mapName = string.lower(GetMapName())
+     local randomDraftMode = mapName == "rd" or __TS__StringIncludes(mapName, "/rd") or __TS__StringIncludes(mapName, "\\rd")
+     local function fetchStartViaClient()
++        if expectedPlayers > 0 then
++            self:SetTransportMode(2, "loading_gate_client_relay")
++        end
+         ClientApiTransport:FetchGameStart(
+             clientPlayers,
+             matchId,
+             randomDraftMode,
+             function(____, gameStart) return ____exports.Game:FinalizeStartGame(gameStart) end,
+             function(____, reason)
++                self:ReleaseGameAfterLoading()
+                 ApiClient:DebugLog("[Game] client relay game/start failed: " .. reason)
+                 if IsInToolsMode() then
+                     Player:saveMemberToNetTable()
+                 end
++                local message = "[LoadingGate] ERROR: " .. tostring(reason)
++                print("[Game] " .. message)
++                GameRules:SendCustomMessage("<font color='#FF5555'>" .. message .. "</font>", 0, 0)
+                 CustomNetTables:SetTableValue("loading_status", "loading_status", {status = 3})
++            end,
++            expectedPlayers,
++            timeoutSeconds
++        )
++    end
++    if expectedPlayers > 0 then
++        fetchStartViaClient(nil)
++    else
++        ____exports.Game:FetchStartGameFromBackupHostWithFailure(
++            steamIds,
++            matchId,
++            randomDraftMode,
++            function()
++                ____exports.Game:SetTransportMode(2, "game_start_server_unreachable")
++                fetchStartViaClient(nil)
+             end
+         )
+     end
+-    ____exports.Game:FetchStartGameFromBackupHostWithFailure(
+-        steamIds,
+-        matchId,
+-        randomDraftMode,
+-        function()
+-            ____exports.Game:SetTransportMode(2, "game_start_server_unreachable")
+-            fetchStartViaClient(nil)
+-        end
+-    )
+ end
+ function Game.EndGame(self, gameEndDto)
+     ApiClient:DebugLog("[Game] old /game/end disabled: matchId=" .. gameEndDto.matchId)
+diff --git client-api-transport.ORIGINAL.lua client-api-transport.PATCHED.lua
+index 189f004..9a7a8b5 100644
+--- client-api-transport.ORIGINAL.lua
++++ client-api-transport.PATCHED.lua
+@@ -149,13 +149,14 @@ function ClientApiTransport.SendApiRequest(self, apiParameter)
+         self:EnqueueRelayRequest(pending)
+     end
+ end
+-function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMode, success, failure)
++function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMode, success, failure, expectedPlayers, timeoutSeconds)
+     print((("[ClientApiTransport] game/start relay: players=" .. tostring(#players)) .. ", matchId=") .. matchId)
++    self.gateExpectedPlayers = expectedPlayers or 0
++    self.gateTimeoutSeconds = timeoutSeconds or 0
+     local ____self_5, ____startGeneration_6 = self, "startGeneration"
+     local ____self_startGeneration_7 = ____self_5[____startGeneration_6] + 1
+     ____self_5[____startGeneration_6] = ____self_startGeneration_7
+     local generation = ____self_startGeneration_7
+-    local requestId = (((matchId .. "_") .. tostring(generation)) .. "_") .. tostring(RandomInt(100000, 999999))
+     local credential = self:ResolveRelayCredential()
+     if not credential then
+         failure(nil, "signing_credential_unavailable")
+@@ -165,6 +166,9 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
+     self.startPending = {}
+     self.startResults = {}
+     self.startExpected = #players
++    if self.gateExpectedPlayers > 0 and #players < self.gateExpectedPlayers then
++        self.startExpected = self.gateExpectedPlayers
++    end
+     self.startFinished = 0
+     self.startSuccess = success
+     self.startFailure = failure
+@@ -175,6 +179,10 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
+                 self.startFinished = self.startFinished + 1
+                 goto __continue27
+             end
++            -- game-start-v2.html is keyed by requestId on the backend. A shared
++            -- id makes every player after the first receive an empty/stale page
++            -- and time out on chunk 0, so give each player its own id.
++            local requestId = (((matchId .. "_") .. tostring(generation)) .. "_") .. tostring(RandomInt(100000, 999999))
+             self.startPending[tostring(entry.playerId)] = {requestId = requestId, chunks = {}, complete = false}
+             local playerSignature = LocalGameAuth:HmacSha256Hex(
+                 credential.secret,
+@@ -210,13 +218,15 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
+         end
+         ::__continue27::
+     end
+-    if #players == 0 then
++    if #players == 0 and self.gateExpectedPlayers <= 0 then
+         failure(nil, "no_players")
+         return
+     end
+     self:TryFinishStart(generation, false)
++    local waitSeconds = self.gateTimeoutSeconds > 0 and self.gateTimeoutSeconds or self.START_TIMEOUT_SECONDS
++    print((("[ClientApiTransport] game/start gate: expected=" .. tostring(self.gateExpectedPlayers)) .. ", timeout=") .. tostring(waitSeconds))
+     Timers:CreateTimer({
+-        endTime = self.START_TIMEOUT_SECONDS,
++        endTime = waitSeconds,
+         useGameTime = false,
+         callback = function() return self:TryFinishStart(generation, true) end
+     })
+@@ -764,6 +774,23 @@ function ClientApiTransport.TryFinishStart(self, generation, force)
+     local failure = self.startFailure
+     self.startSuccess = nil
+     self.startFailure = nil
++    local required = self.gateExpectedPlayers or 0
++    if required > 0 then
++        local loaded = #self.startResults
++        if loaded >= required then
++            print(("[ClientApiTransport] game/start gate passed: loaded=" .. tostring(loaded)) .. ("/" .. tostring(required)))
++            if success ~= nil then
++                success(nil, self:MergeStartResults(self.startResults))
++            end
++            return
++        end
++        local reason = force and "timeout" or "not_enough_players_loaded"
++        print((((("[ClientApiTransport] game/start gate FAILED: loaded=" .. tostring(loaded)) .. "/") .. tostring(required)) .. ", reason=") .. reason)
++        if failure ~= nil then
++            failure(nil, (reason .. ":") .. (tostring(loaded) .. ("/" .. tostring(required))))
++        end
++        return
++    end
+     if #self.startResults == 0 then
+         local reason = force and "timeout" or "all_relays_failed"
+         print("[ClientApiTransport] game/start relay failed: reason=" .. reason)
+@@ -985,6 +1012,8 @@ ClientApiTransport.registered = false
+ ClientApiTransport.startGeneration = 0
+ ClientApiTransport.startPending = {}
+ ClientApiTransport.startResults = {}
++ClientApiTransport.gateExpectedPlayers = 0
++ClientApiTransport.gateTimeoutSeconds = 0
+ ClientApiTransport.startExpected = 0
+ ClientApiTransport.startFinished = 0
+ ClientApiTransport.endUploads = {}

@@ -1,0 +1,95 @@
+// DO NOT EDIT MANUALLY. Managed by clone-item skill.
+"DOTAAbilities"
+{
+	//=================================================================================================================
+	// Hydra's Breath Plus 怪蛇之息 Plus
+	//=================================================================================================================
+	"item_recipe_hydras_breath_plus"
+	{
+		"BaseClass"					"item_datadriven"
+		"Model"						"models/props_gameplay/recipe.vmdl"
+		"AbilityTextureName"			"item_recipe_hydras_breath"
+		"ItemCost"					"5900"
+		"ItemRecipe"					"1"
+		"ItemResult"					"item_hydras_breath_plus"
+		"ItemRequirements"
+		{
+			"01"						"item_hydras_breath"
+		}
+	}
+	"item_hydras_breath_plus"
+	{
+		"BaseClass"					"item_hydras_breath"
+		"AbilityBehavior"				"DOTA_ABILITY_BEHAVIOR_PASSIVE"
+		"AbilityTextureName"			"hydras_breath_plus"
+		"ItemCost"					"11800"
+		"ItemQuality"					"artifact"
+		"AbilityValues"
+		{
+			"strength"					"40"		// 15
+			"agility"					"60"		// 30
+			"damage"					"60"		// 25
+			"count"						"5"		// 3
+			"secondary_target_range_bonus"	"200"		// 150
+			"secondary_target_angle"		"120"		// 120
+			"proc_chance"					"40"		// 30
+			"proc_dmg_pct"					"100"		// 75
+			"proc_dmg_pct_primary_tooltip"	"120"		// 100
+			"base_proc_dmg"					"40"		// 20
+			"base_attack_range"				"200"		// 150
+			"poison_duration"				"3"		// 3
+			"poison_damage_per_second"		"4"		// 2.5
+		}
+	}
+
+	//=================================================================================================================
+	// Mjollnir Plus 雷神之锤 Plus
+	//=================================================================================================================
+	"item_recipe_mjollnir_plus"
+	{
+		"BaseClass"					"item_datadriven"
+		"Model"						"models/props_gameplay/recipe.vmdl"
+		"AbilityTextureName"			"item_recipe_mjollnir"
+		"ItemCost"					"5500"
+		"ItemRecipe"					"1"
+		"ItemResult"					"item_mjollnir_plus"
+		"ItemRequirements"
+		{
+			"01"						"item_mjollnir"
+		}
+	}
+	"item_mjollnir_plus"
+	{
+		"BaseClass"					"item_mjollnir"
+		"AbilityBehavior"				"DOTA_ABILITY_BEHAVIOR_UNIT_TARGET"
+		"AbilityUnitTargetTeam"			"DOTA_UNIT_TARGET_TEAM_FRIENDLY"
+		"AbilityUnitTargetType"			"DOTA_UNIT_TARGET_HERO | DOTA_UNIT_TARGET_BASIC"
+		"AbilityTextureName"			"mjollnir_plus"
+		"AbilityCastRange"				"800"
+		"AbilityCastPoint"				"0.0"
+		"AbilityCooldown"				"35.0"
+		"AbilityManaCost"				"50"
+		"ItemCost"					"11000"
+		"ItemQuality"					"artifact"
+		"AbilityValues"
+		{
+			"bonus_damage"					"60"		// 25
+			"bonus_attack_speed"			"180"		// 90
+			"static_duration"				"15"		// 15
+			"static_chance"					"25"		// 20
+			"static_strikes"				"6"		// 4
+			"static_damage"					"500"		// 225
+			"static_primary_radius"			"600"		// 600
+			"static_seconary_radius"		"900"		// 900
+			"static_radius"					"900"		// 900
+			"static_cooldown"				"1"		// 1
+			"chain_chance"					"35"		// 25
+			"chain_damage"					"500"		// 180
+			"chain_strikes"					"14"		// 12
+			"chain_radius"					"650"		// 650
+			"chain_delay"					"0.25"		// 0.25
+			"chain_cooldown"				"0.2"		// 0.2
+			"illusion_multiplier_pct"		"100"		// 100
+		}
+	}
+}

@@ -1,0 +1,44 @@
+<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+  custom_net_tables =
+  [
+    // Lua tables
+    "player_tome_table",
+    "disable_help",
+    "difficulty_choice",
+
+    // Lua/TS tables
+    "game_options",
+    "game_difficulty",
+
+    // Panorama/TS tables
+    "player_stats",
+    // TS tables
+    "loading_status",
+    "ending_status",
+    "api_transport",
+    "abyss_status",
+    "member_table",
+    "player_table",
+    "player_task_table",  // 任务面板
+    "showcase_table",  // 觉醒面板
+    "ranking_table",  // 排行榜
+    "point_info",   // 游戏加载时获取积分信息
+    "player_title_table",
+    "possession_title_table",
+    // 抽选相关
+    "lottery_active_abilities",
+    "lottery_passive_abilities",
+    "lottery_passive_abilities_2",
+    "lottery_status",
+    "lottery_item",
+    "ability_replace",
+    "skill_learning_usage",
+    "bot_abilities",
+    "hero_ban_pick",
+    "player_tips",
+    "gold_consumable_converter",
+	  "player_virtual_gold",  // 添加这一行
+    "player_names",//
+  ]
+}

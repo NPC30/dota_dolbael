@@ -1,0 +1,291 @@
+"DOTAAbilities"
+{
+	//=================================================================================================================
+	// Neutral item passive Override 中立物品附魔
+	//=================================================================================================================
+	// 神秘 回蓝魔抗
+	"item_enhancement_mystical"
+	{
+		"AbilityValues"
+		{
+			"mana_regen"				"3 6 9 12"		// 0.8 1.6 2.4 3.2
+			"magic_res"					"0 10 25 30"	// 0 10 16 22
+			"bonus_cast_range"			"25 50 75 100"	// 0 0 0 100
+		}
+	}
+	// 壮实 血量回血
+	"item_enhancement_brawny"
+	{
+		"AbilityValues"
+		{
+			"health_bonus"			"200 400 600 800"	// 110 150 190 230
+			"health_regen"			"5 10 15 20"		// 0 3 6 9
+			"slow_resist"			"0 10 20 30"		// 0 0 0 25
+		}
+	}
+	// 警觉 攻速夜视
+	"item_enhancement_alert"
+	{
+		"AbilityValues"
+		{
+			"bonus_attack_speed"	"15 30 45 60"		// 10 17 24 31
+			"bonus_night_vision"	"75 150 225 300"	// 0 150 225 300
+			"bonus_attack_range"	"25 50 75 100"		// 0 0 0 100
+		}
+	}
+	// 睿智 每分钟经验 1&2级
+	"item_enhancement_wise"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_xpm"					"400 800"	// n-1级升到n级所需经验为150n+50，从1升到n总经验为200n+75n(n-1)=75n^2+125n,当前刷野最快纪录7分钟25级即7分钟5w（1.5倍率）
+			"max_mana_pct"				"10 20"		// 15
+		}
+	}
+	// 贪婪 工资蓝量减攻击
+	"item_enhancement_greedy"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_gpm"			"600 1000"			// 75 100
+			"bonus_mana"		"300 600"			// 200 250
+			"bonus_damage"		"-20 -40"			// -30 -60
+		}
+	}
+	// 坚强 攻击护甲
+	"item_enhancement_tough"
+	{
+		"AbilityValues"
+		{
+			"bonus_damage"				"10 20 30 40"	// 7 10 13 16
+			"armor"						"5 10 15 20"	// 0 4 6 8
+			"knockback_resist"			"10 20 30 40"	// 0 0 0 40
+		}
+	}
+	// 迅速 移速（可叠加）蓝量
+	"item_enhancement_quickened"
+	{
+		"AbilityValues"
+		{
+			"movement_speed"			"30 50 70 90"		// 15 20 25 30
+			"max_mana"					"200 400 600 800"	// 0 100 160 220
+		}
+	}
+
+	// 吸血鬼 双吸血
+	"item_enhancement_vampiric"
+	{
+		"MaxLevel"						"3"
+		"AbilityValues"
+		{
+			"attack_lifesteal"				"12 18 24"	// 12 14 16
+			"spell_lifesteal"				"8 12 16"	// 6 8 10
+			"bonus_night_vision"			"0 100 200"	// 0 0 200
+		}
+	}
+
+	// 进化 主属性 3级
+	"item_enhancement_evolved"
+	{
+		"MaxLevel"						"3"
+		"AbilityValues"
+		{
+			"primary_stat"			 	"40 80 160"			// 40
+			"primary_stat_universal"	"24 48 96"			// 24
+		}
+	}
+	// 高远 所有攻击距离 2&3级
+	"item_enhancement_vast"
+	{
+		"AbilityValues"
+		{
+			"attack_range"						"80 120"	// 75 110
+		}
+	}
+	// 犀利 施法距离回蓝最大魔法
+	"item_enhancement_keen_eyed"
+	{
+		"MaxLevel"						"3"
+		"AbilityValues"
+		{
+			"cast_range_bonus"					"125 175 175"	// 125 135
+			"bonus_mana_regen"					"3 6 6"		// 1 1.5
+			"mana_reduction_pct"				"10 15 15"	// 10
+		}
+	}
+	// 冒险 攻速魔法攻击伤害增加承伤 5级
+	"item_enhancement_audacious"
+	{
+		"AbilityValues"
+		{
+			"attack_speed"				"300"				// 100
+			"magic_damage"				"240"				// 80
+			"incoming_damage"			"15"				// 10
+		}
+	}
+	// 捷足 移速（可叠加） 5级
+	"item_enhancement_fleetfooted"
+	{
+		"AbilityValues"
+		{
+			"movespeed"					"230"				// 115
+		}
+	}
+	// 粗暴 生命回复攻击间隔减智力
+	"item_enhancement_crude"
+	{
+		"MaxLevel"						"4"
+		"AbilityValues"
+		{
+			"health_restoration"		"35 60 60 60"		// 30 40
+			"bat_reduce"				"18 30 30 30"		// 12 18
+			"intelligence_pct"			"-5 -10 -10 -10"	// -5
+		}
+	}
+	// 无边 攻击距离施法距离 4&5级
+	"item_enhancement_boundless"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_attack_range"		"150 250"			// 150
+			"bonus_cast_range"			"300 450"			// 350
+		}
+	}
+	// 永恒 负面时间技能增强 4&5级
+	"item_enhancement_timeless"
+	{
+		"AbilityValues"
+		{
+			"debuff_amp"		"15 30"						// 10 15
+			"spell_amp"			"30 60"						// 8 16
+		}
+	}
+	// 巨神 基础攻击状态抗性
+	"item_enhancement_titanic"
+	{
+		"MaxLevel"						"4"
+		"AbilityValues"
+		{
+			"base_attack_damage"		"20 40 40 40"		// 10 20
+			"status_resistance"			"15 30 30 30"		// 10 15
+		}
+	}
+	// 凶猛 移速夜视攻击力
+	"item_enhancement_fierce"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"movement_speed"			"30 30"			// 30
+			"bonus_night_vision"		"250 250"		// 250
+			"bonus_damage"				"15 15"			// 15
+		}
+	}
+	// 专横 攻速魔抗生命
+	"item_enhancement_dominant"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"attack_speed"				"25 25"			// 25
+			"magic_resist"				"15 15"			// 15
+			"bonus_health"				"205 205"		// 205
+		}
+	}
+	// 滋补 魔法生命回复治疗增强
+	"item_enhancement_restorative"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_mana"				"200 200"		// 200
+			"bonus_hp_regen"			"8 8"			// 8
+			"heal_amp"					"10 10"			// 10
+		}
+	}
+	// 厚重 生命回蓝护甲
+	"item_enhancement_thick"
+	{
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_health"				"240 240"		// 240
+			"bonus_mana_regen"			"3 3"			// 3
+			"bonus_armor"				"7 7"			// 7
+		}
+	}
+	//=================================================================================================================
+	// 额外添加
+	//=================================================================================================================
+
+	//扫帚柄
+	"item_broom_handle"
+	{
+		"ItemIsNeutralPassiveDrop"		"1"
+		"AbilityValues"
+		{
+				"melee_attack_range"			"50"	//50
+				"bonus_damage"		"10"				//8
+				"bonus_armor"		"5"					//4
+		}
+	}
+	// 加速护符 炸弹人天命bug暂时移除
+	"item_quickening_charm"
+	{
+		"ItemIsNeutralPassiveDrop"		"1"
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+			"bonus_cooldown"			"6 12"			//10
+			"bonus_health_regen"		"6 12"			//10
+		}
+	}
+	//仙灵饰品
+	"item_mysterious_hat"
+	{
+		"ItemIsNeutralPassiveDrop"		"1"
+		"MaxLevel"						"2"
+		"AbilityValues"
+		{
+				"bonus_health"			"300 600"		// 50
+				"spell_amp"				"20 40"			// 5
+				"manacost_reduction"	"10 20"			// 5
+		}
+	}
+	//法术棱镜
+	"item_spell_prism"
+	{
+		"ItemIsNeutralPassiveDrop"		"1"
+		"MaxLevel"						"1"
+		"AbilityValues"
+		{
+				"bonus_cooldown"		"20"			//12
+				"bonus_all_stats"		"16"			//5
+				"mana_regen"			"8"				//2
+		}
+	}
+	//骑士剑
+	"item_paladin_sword"
+	{
+		"ItemIsNeutralPassiveDrop"		"1"
+		"AbilityValues"
+		{
+			"bonus_damage"			"120"			//16
+			"bonus_lifesteal"		"40"			//16
+			"bonus_spell_lifesteal"	"30"			//8
+		}
+	}
+	// 迷踪 闪避移速
+	"item_neutral_tabi"
+	{
+		"AbilityValues"
+		{
+			"attack_speed"				"0"			// 0
+			"evasion"					"40"		// 35
+			"movespeed"					"75"		// 25
+		}
+	}
+}

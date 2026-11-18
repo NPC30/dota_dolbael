@@ -1,0 +1,126 @@
+LinkLuaModifier("modifier_tinker_rearm_command_restricted", "lua_abilities/tinker_rearm_lua/tinker_rearm_lua",
+LUA_MODIFIER_MOTION_NONE)
+tinker_rearm_lua = class({})
+function tinker_rearm_lua:GetCastAnimation()
+return ACT_DOTA_TINKER_REARM1
+end
+function tinker_rearm_lua:OnSpellStart()
+local sound_cast = "Hero_Tinker.Rearm"
+EmitSoundOn(sound_cast, self:GetCaster())
+local playerID = self:GetCaster():GetPlayerID()
+if PlayerResource:IsFakeClient(playerID) then
+self:GetCaster():AddNewModifier(
+self:GetCaster(),
+self,
+"modifier_tinker_rearm_command_restricted",
+{ duration = self:GetChannelTime() }
+)
+end
+end
+function tinker_rearm_lua:OnChannelFinish(bInterrupted)
+local caster = self:GetCaster()
+local sound_cast = "Hero_Tinker.Rearm"
+StopSoundOn(sound_cast, self:GetCaster())
+if bInterrupted then
+caster:RemoveModifierByName("modifier_tinker_rearm_command_restricted")
+return
+end
+for i = 0, caster:GetAbilityCount() - 1 do
+local ability = caster:GetAbilityByIndex(i)
+if ability and ability:GetAbilityType() ~= ABILITY_TYPE_ATTRIBUTES and not self:IsAbitilyException(ability) then
+ability:RefreshCharges()
+ability:EndCooldown()
+end
+end
+for i = 0, 8 do
+local item = caster:GetItemInSlot(i)
+if item then
+local pass = false
+if item:GetPurchaser() == caster and not self:IsItemException(item) then
+pass = true
+end
+if pass then
+item:EndCooldown()
+end
+end
+end
+local item = caster:GetItemInSlot(DOTA_ITEM_TP_SCROLL)
+if item then
+item:EndCooldown()
+end
+self:PlayEffects()
+end
+function tinker_rearm_lua:IsAbitilyException(ability)
+return self.AbitilyException[ability:GetName()]
+end
+tinker_rearm_lua.AbitilyException = {
+["invoker_sun_strike"] = true,
+["zuus_thundergods_wrath"] = true,
+["warlock_rain_of_chaos"] = true,
+["furion_wrath_of_nature"] = true,
+["faceless_void_time_zone"] = true,
+["shadow_shaman_mass_serpent_ward"] = true,
+["spectre_haunt"] = true,
+["beastmaster_call_of_the_wild_hawk"] = true,
+["beastmaster_call_of_the_wild_boar"] = true,
+["enigma_demonic_conversion"] = true,
+["faceless_void_chronosphere"] = true,
+["undying_tombstone"] = true,
+["venomancer_plague_ward"] = true,
+["arc_warden_tempest_double"] = true,
+["shadow_demon_disruption"] = true,
+["terrorblade_conjure_image"] = true,
+["terrorblade_reflection"] = true,
+["hoodwink_decoy"] = true,
+["grimstroke_dark_portrait"] = true,
+}
+function tinker_rearm_lua:IsItemException(item)
+return self.ItemException[item:GetName()]
+end
+tinker_rearm_lua.ItemException = {
+["item_aeon_disk"] = true,
+["item_arcane_boots"] = true,
+["item_black_king_bar"] = true,
+["item_hand_of_midas"] = true,
+["item_helm_of_the_dominator"] = true,
+["item_helm_of_the_overlord"] = true,
+["item_meteor_hammer"] = true,
+["item_necronomicon"] = true,
+["item_necronomicon_2"] = true,
+["item_necronomicon_3"] = true,
+["item_refresher"] = true,
+["item_refresher_shard"] = true,
+["item_refresh_core"] = true,
+["item_pipe"] = true,
+["item_sphere"] = true,
+["item_aeon_pendant"] = true,
+["item_black_king_bar_2"] = true,
+["item_sphere_2"] = true,
+["item_insight_armor"] = true,
+["item_hand_of_group"] = true,
+["item_meteor_hammer_2"] = true,
+["item_saint_orb"] = true,
+["item_candy_candy"] = true,
+["item_switchable_crit_blade"] = true,
+["item_magic_crit_blade"] = true,
+["item_time_gem"] = true,
+}
+function tinker_rearm_lua:PlayEffects()
+local particle_cast = "particles/units/heroes/hero_tinker/tinker_rearm.vpcf"
+local sound_cast = "Hero_Tinker.RearmStart"
+local effect_cast = ParticleManager:CreateParticle(particle_cast, PATTACH_ABSORIGIN_FOLLOW, self:GetCaster())
+assert(loadfile("lua_abilities/rubick_spell_steal_lua/rubick_spell_steal_lua_color"))(self, effect_cast)
+ParticleManager:ReleaseParticleIndex(effect_cast)
+EmitSoundOn(sound_cast, self:GetCaster())
+end
+modifier_tinker_rearm_command_restricted = class({})
+function modifier_tinker_rearm_command_restricted:IsHidden() return true end
+function modifier_tinker_rearm_command_restricted:IsDebuff() return false end
+function modifier_tinker_rearm_command_restricted:IsPurgable() return false end
+function modifier_tinker_rearm_command_restricted:RemoveOnDeath() return true end
+function modifier_tinker_rearm_command_restricted:CheckState()
+local state = {
+[MODIFIER_STATE_COMMAND_RESTRICTED] = true,
+}
+return state
+end
