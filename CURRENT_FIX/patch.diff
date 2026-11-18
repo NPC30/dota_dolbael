@@ -127,14 +127,20 @@ index eba8332..5f67d96 100644
  function Game.EndGame(self, gameEndDto)
      ApiClient:DebugLog("[Game] old /game/end disabled: matchId=" .. gameEndDto.matchId)
 diff --git client-api-transport.ORIGINAL.lua client-api-transport.PATCHED.lua
-index 189f004..0871849 100644
+index 189f004..5c03cbf 100644
 --- client-api-transport.ORIGINAL.lua
 +++ client-api-transport.PATCHED.lua
-@@ -149,13 +149,61 @@ function ClientApiTransport.SendApiRequest(self, apiParameter)
+@@ -149,13 +149,81 @@ function ClientApiTransport.SendApiRequest(self, apiParameter)
          self:EnqueueRelayRequest(pending)
      end
  end
 -function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMode, success, failure)
++function ClientApiTransport.Chat(self, message, color)
++    if GameRules == nil or GameRules.SendCustomMessage == nil then
++        return
++    end
++    GameRules:SendCustomMessage("<font color='" .. (color or "#66CCFF") .. "'>[Gate] " .. message .. "</font>", 0, 0)
++end
 +function ClientApiTransport.SendGameStartRequest(self, playerId, steamId, matchId, randomDraftValue, credential, generation)
 +    local player = PlayerResource:GetPlayer(playerId)
 +    if not player then
@@ -167,6 +173,13 @@ index 189f004..0871849 100644
 +        backendUrl = self.BACKEND_URL
 +    }
 +    print(("[ClientApiTransport] game/start request sent: playerId=" .. tostring(playerId)) .. ", requestId=" .. requestId)
++    print(
++        ((((("[ClientApiTransport] game/start sign: playerId=" .. tostring(playerId)) .. ", key=") .. tostring(credential.source)) .. ", signature=") .. playerSignature) .. ((", backend=" .. tostring(self.BACKEND_URL)))
++    )
++    self:Chat(
++        (((("SEND player=" .. tostring(playerId)) .. ((", req=" .. requestId) .. ((", try=" .. tostring(attempts + 1)) .. ("/" .. tostring(self.GATE_START_MAX_ATTEMPTS))))) .. ", key=") .. tostring(credential.source)),
++        "#66CCFF"
++    )
 +    CustomGameEventManager:Send_ServerToPlayer(player, "client_api_start_request", payload)
 +    Timers:CreateTimer({
 +        endTime = 1,
@@ -186,6 +199,13 @@ index 189f004..0871849 100644
      print((("[ClientApiTransport] game/start relay: players=" .. tostring(#players)) .. ", matchId=") .. matchId)
 +    self.gateExpectedPlayers = expectedPlayers or 0
 +    self.gateTimeoutSeconds = timeoutSeconds or 0
++    if self.gateExpectedPlayers > 0 then
++        local waitSeconds = self.gateTimeoutSeconds > 0 and self.gateTimeoutSeconds or self.START_TIMEOUT_SECONDS
++        self:Chat(
++            (((("WAIT expected=" .. tostring(self.gateExpectedPlayers)) .. ", timeout=") .. tostring(waitSeconds)) .. "s, connected=") .. tostring(#players),
++            "#FFDD55"
++        )
++    end
      local ____self_5, ____startGeneration_6 = self, "startGeneration"
      local ____self_startGeneration_7 = ____self_5[____startGeneration_6] + 1
      ____self_5[____startGeneration_6] = ____self_startGeneration_7
@@ -194,7 +214,7 @@ index 189f004..0871849 100644
      local credential = self:ResolveRelayCredential()
      if not credential then
          failure(nil, "signing_credential_unavailable")
-@@ -165,61 +213,64 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
+@@ -165,61 +233,68 @@ function ClientApiTransport.FetchGameStart(self, players, matchId, randomDraftMo
      self.startPending = {}
      self.startResults = {}
      self.startExpected = #players
@@ -287,6 +307,10 @@ index 189f004..0871849 100644
 +                        local steamId = PlayerResource:GetSteamAccountID(playerId)
 +                        if self:SendGameStartRequest(playerId, steamId, matchId, randomDraftValue, credential, generation) then
 +                            print((("[ClientApiTransport] game/start gate player added/retried: playerId=" .. tostring(playerId)) .. ", attempts=") .. tostring(attempts + 1))
++                            self:Chat(
++                                (((attempts > 0) and "RETRY " or "LATE ") .. "player=") .. (tostring(playerId) .. (", try=" .. (tostring(attempts + 1) .. ("/" .. tostring(self.GATE_START_MAX_ATTEMPTS))))),
++                                "#FFDD55"
++                            )
 +                        end
 +                    end
 +                end)
@@ -297,15 +321,60 @@ index 189f004..0871849 100644
  end
  function ClientApiTransport.SendGameEnd(self, gameEndDto, success, failure)
      print("[ClientApiTransport] game/end relay: matchId=" .. gameEndDto.matchId)
-@@ -715,6 +766,7 @@ function ClientApiTransport.OnStartChunk(self, event)
+@@ -683,12 +758,20 @@ function ClientApiTransport.IsSteamPlayerPath(self, path, suffix)
+     return true
+ end
+ function ClientApiTransport.ResolveRelayCredential(self)
++    -- Read-only GET check: /api/panorama/game-start-v2.html accepts an HMAC
++    -- made with the addon's LOCAL_GAME_API_SECRET and returns a valid
++    -- "OMG1|start|..." title. Prefer it: on -insecure dedicated servers the
++    -- "v2" key can be a local value the backend does not know, so every chunk
++    -- request comes back 400 and the client reports chunk_0_timeout.
++    local localSecret = LocalGameAuth:GetSecret()
++    if localSecret then
++        return {secret = localSecret, source = "local"}
++    end
+     local dedicatedKey = GetDedicatedServerKeyV3("v2")
+     if type(dedicatedKey) == "string" and #dedicatedKey > 0 and (string.find(dedicatedKey, "Invalid_", nil, true) or 0) - 1 ~= 0 then
+         return {secret = dedicatedKey, source = "dedicated"}
+     end
+-    local localSecret = LocalGameAuth:GetSecret()
+-    return localSecret and ({secret = localSecret, source = "local"}) or nil
++    return nil
+ end
+ function ClientApiTransport.OnStartChunk(self, event)
+     local playerId = event.PlayerID
+@@ -705,6 +788,12 @@ function ClientApiTransport.OnStartChunk(self, event)
+     end
+     pending.total = total
+     pending.chunks[tostring(index)] = event.data
++    if index == 0 then
++        self:Chat(
++            (((("CHUNK0 player=" .. tostring(playerId)) .. ", total=") .. tostring(total)) .. ", req=") .. pending.requestId,
++            "#66FF99"
++        )
++    end
+     do
+         local i = 0
+         while i < total do
+@@ -715,7 +804,16 @@ function ClientApiTransport.OnStartChunk(self, event)
          end
      end
      pending.complete = true
 +    pending.success = true
      self.startFinished = self.startFinished + 1
++    local loadedText = ""
++    if self.gateExpectedPlayers > 0 then
++        loadedText = ", loaded=" .. tostring(#self.startResults + 1) .. "/" .. tostring(self.gateExpectedPlayers)
++    end
++    self:Chat(
++        "LOADED player=" .. tostring(playerId) .. ", chunks=" .. tostring(total) .. "/" .. tostring(total) .. ", req=" .. pending.requestId .. loadedText,
++        "#66FF99"
++    )
      do
          local function ____catch(____error)
-@@ -752,7 +804,10 @@ function ClientApiTransport.OnStartFailure(self, event)
+             print("[ClientApiTransport] invalid game/start response: " .. tostring(____error))
+@@ -752,8 +850,15 @@ function ClientApiTransport.OnStartFailure(self, event)
          return
      end
      pending.complete = true
@@ -315,9 +384,14 @@ index 189f004..0871849 100644
 +        self.startFinished = self.startFinished + 1
 +    end
      print((("[ClientApiTransport] game/start relay failed: player=" .. tostring(playerId)) .. ", reason=") .. event.reason)
++    self:Chat(
++        ("FAIL player=" .. tostring(playerId)) .. ((", req=" .. pending.requestId) .. ((", try=" .. tostring(pending.attempts or 1)) .. ("/" .. tostring(self.GATE_START_MAX_ATTEMPTS) .. (", reason=" .. tostring(event.reason))))),
++        "#FF5555"
++    )
      self:TryFinishStart(self.startGeneration, false)
  end
-@@ -764,6 +819,23 @@ function ClientApiTransport.TryFinishStart(self, generation, force)
+ function ClientApiTransport.TryFinishStart(self, generation, force)
+@@ -764,6 +869,25 @@ function ClientApiTransport.TryFinishStart(self, generation, force)
      local failure = self.startFailure
      self.startSuccess = nil
      self.startFailure = nil
@@ -326,6 +400,7 @@ index 189f004..0871849 100644
 +        local loaded = #self.startResults
 +        if loaded >= required then
 +            print(("[ClientApiTransport] game/start gate passed: loaded=" .. tostring(loaded)) .. ("/" .. tostring(required)))
++            self:Chat("PASSED " .. tostring(loaded) .. "/" .. tostring(required) .. " - game starting", "#66FF99")
 +            if success ~= nil then
 +                success(nil, self:MergeStartResults(self.startResults))
 +            end
@@ -333,6 +408,7 @@ index 189f004..0871849 100644
 +        end
 +        local reason = force and "timeout" or "not_enough_players_loaded"
 +        print((((("[ClientApiTransport] game/start gate FAILED: loaded=" .. tostring(loaded)) .. "/") .. tostring(required)) .. ", reason=") .. reason)
++        self:Chat("FAILED " .. tostring(loaded) .. "/" .. tostring(required) .. ", reason=" .. reason, "#FF5555")
 +        if failure ~= nil then
 +            failure(nil, (reason .. ":") .. (tostring(loaded) .. ("/" .. tostring(required))))
 +        end
@@ -341,7 +417,7 @@ index 189f004..0871849 100644
      if #self.startResults == 0 then
          local reason = force and "timeout" or "all_relays_failed"
          print("[ClientApiTransport] game/start relay failed: reason=" .. reason)
-@@ -985,6 +1057,9 @@ ClientApiTransport.registered = false
+@@ -985,6 +1109,9 @@ ClientApiTransport.registered = false
  ClientApiTransport.startGeneration = 0
  ClientApiTransport.startPending = {}
  ClientApiTransport.startResults = {}

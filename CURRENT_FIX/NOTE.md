@@ -101,6 +101,19 @@ return {
   ботов, удалён и не возвращать. Новый watcher — другой: только human, только
   `client_api_start_request`, с лимитом попыток.
 
+### Логи в чате Доты
+Добавлены через `GameRules:SendCustomMessage(..., 0, 0)` с префиксом `[Gate]`,
+поэтому видны прямо в игровом чате (цветом):
+- `WAIT expected=N, timeout=T s, connected=X` — старт ожидания;
+- `SEND player=P, req=R, try=K/M` — ушёл старт-запрос игроку;
+- `LATE player=P, try=K/M` / `RETRY player=P, try=K/M` — досылка/watchdog;
+- `CHUNK0 player=P, total=N, req=R` — **первый чанк принят** (ключевой признак);
+- `LOADED player=P, chunks=N/N, req=R, loaded=x/y` — игрок полностью загрузился;
+- `FAIL player=P, req=R, try=K/M, reason=...` — ошибка загрузки игрока;
+- `PASSED x/y - game starting` / `FAILED x/y, reason=...` — итог гейта.
+
+Старый красный `[LoadingGate] ERROR: ...` в чате тоже остался.
+
 ---
 
 ## Что делать после патча кастомки
@@ -189,6 +202,15 @@ client received: kind=start, ..., requestId=0_1_yyyyyy, playerId=1
 [Game] [LoadingGate] ERROR: not_enough_players_loaded:0/2
 ```
 
+То же в чате Доты:
+```
+[Gate] WAIT expected=2, timeout=120s, connected=1
+[Gate] SEND player=0, req=0_1_881168, try=1/3
+[Gate] LATE player=1, try=1/3
+[Gate] FAIL player=0, req=0_1_881168, try=1/3, reason=chunk_0_timeout
+[Gate] FAILED 0/2, reason=timeout
+```
+
 Плохие признаки (старый баг):
 - одинаковый `requestId` у `playerId=0` и `1`;
 - `game/start relay succeeded: responses=1`;
@@ -217,6 +239,18 @@ client received: kind=start, ..., requestId=0_1_yyyyyy, playerId=1
 - Итог: `[Game] [LoadingGate] ERROR: timeout:0/2` — гейт корректно заблокировал
   игру и выдал ошибку.
 
+### Лог 21:40 (после human-only watcher)
+- Watcher отработал идеально: `player=1` добавлен (`attempts=1`), затем по 2–3
+  попытки для каждого игрока, всего 6 старт-запросов, все получили
+  `client received: kind=start`.
+- **Ни один `CHUNK0` не пришёл**: все 6 попыток закончились `chunk_0_timeout`.
+- Параллельно затаймаутились **все** обычные relay-GET:
+  `/activity/current`, `/activity/tasks`, `/showcase/profile`,
+  `/showcase/catalog`, `/player/ranking` (45с, `client relay timeout`).
+- Вывод: гейт и per-player `requestId` работают; проблема — клиентский
+  HTTP-релей до `wx.renoomgai.top` (сеть/доступ/подпись/эндпоинт), а не логика
+  ожидания. Добавлены чат-логи `CHUNK0`/`FAIL`, чтобы видеть это без log.txt.
+
 ### GET-проверки бэка (только чтение, WRITE не отправлялись)
 - `GET /api/panorama/game/start?...` → 404
 - `GET /api/panorama/game-start-v2.html` → 400
@@ -225,9 +259,37 @@ client received: kind=start, ..., requestId=0_1_yyyyyy, playerId=1
 - `GET /api/panorama/game-start-v2?requestId=...` → 404
 - `GET /api/panorama/activity/current` → 404
 
-Прямая проверка чанков «вручную» не удалась: неизвестны точные параметры и
-подпись для этих endpoint'ов, а незапрошенный `requestId` бэк не отдаёт. Поэтому
-источник `chunk_0_timeout` остаётся открытым: бэк/релей/подпись или сеть сервера.
+### Проверка подписи (важно!)
+Собран тот же URL, что делает клиент (`DOTAHTMLPanel.SetURL`), с реальной
+канонической строкой и HMAC от **локального секрета аддона**
+`e16bc81b...`:
+
+```
+GET /api/panorama/game-start-v2.html
+  ?requestId=0_999_123456&steamId=383575544&matchId=0
+  &randomDraftMode=0&chunk=0
+  &signature=HMAC_SHA256("e16bc81b...",
+       "OMG2|start|0_999_123456|383575544|0|0")
+```
+
+Результат: **HTTP 200**, `<title>OMG1|start|0_999_123456|0|24|eyJtZW1iZXJz...`.
+То есть бэк принимает подпись локальным секретом: **никакой доп. токен или
+сертификат не нужен**. Раньше «GET без signature → 400», теперь понятно почему.
+
+Поэтому в `ResolveRelayCredential()` теперь **всегда предпочитается**
+`LocalGameAuth:GetSecret()` (source=`local`), а `GetDedicatedServerKeyV3("v2")`
+используется только как fallback. Причина: на `-insecure`-сервере ключ v2 может
+быть локальным/неизвестным бэку → каждый chunk-запрос получает 400 → клиент
+пишет `chunk_0_timeout`. В лог добавлена строка `game/start sign: ... key=...
+signature=... backend=...`, в чат — `SEND ... key=local`.
+
+Если после этого `CHUNK0` всё равно не появится — значит подпись не при чём,
+и проблема именно в загрузке внешнего URL самим Dota-клиентом
+(`DOTAHTMLPanel` / CEF / прокси-доступ), поскольку все обычные relay-GET тоже
+таймаутятся.
+
+Прямая проверка «чужих» requestId бессмысленна: бэк отдаёт страницу по любому
+корректно подписанному id.
 
 ---
 
